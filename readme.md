@@ -141,3 +141,124 @@ The safety and control layer. It handles:
 - **Planning vs Execution** — Understand the difference: planning is before action, reasoning happens during both.
 - **Memory types** — Short term = like a notebook for current task. Long term = like a diary of past experiences.
 - **Real-world example** — Think of an AI customer support bot: it plans how to solve your issue (planning), checks your order history (tool), remembers what you said earlier (memory), and asks a human if it cannot help (supervisor).
+
+
+---
+
+# LangChain vs LangGraph
+
+## What is LangChain?
+
+LangChain is an open-source library for building LLM-based applications. It provides **modular building blocks** that make it easy to create LLM workflows.
+
+**Main components of LangChain:**
+| Component | What it does |
+|-----------|-------------|
+| **Model** | Gives a unified interface to interact with different LLM providers |
+| **Prompts** | Helps you engineer and manage prompts |
+| **Retrievers** | Fetches relevant documents from a vector store |
+
+The biggest feature of LangChain is **Chains** — connecting steps in a sequence.
+
+---
+
+## Example: Automated Hiring Workflow
+
+Imagine we are hiring a **Backend Engineer**. The workflow looks like this:
+
+```
+Start
+  → Hiring Request
+  → Create JD
+  → JD Approved (Human)
+  → Post JD on LinkedIn / other platforms
+  → Wait 7 days
+  → Monitor Applications (threshold = 20 applications)
+      → If NO → Modify JD → Wait 48 hrs → loop back
+      → If YES → Shortlist
+          → Schedule Interview
+          → Conduct Interview
+              → If Selected → Send Offer Letter
+                  → If Accepted → Onboarding
+                  → If Rejected → Renegotiate
+              → If Not Selected → Send Regret Email
+```
+
+---
+
+## Challenges: LangChain vs LangGraph
+
+If we build this workflow with **LangChain**, we face several problems. Here is how **LangGraph** solves each one.
+
+### Challenge 1: Control Flow Complexity
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Problem** | For big workflows, you need a lot of **glue code** for conditions, loops, and jumps | No glue code needed |
+| **How it works** | You write custom Python to handle branching and looping | First create **nodes**, then draw **edges** between them. The graph handles the flow automatically |
+
+### Challenge 2: State Handling
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Problem** | You must manually create a document and **manually change key-value pairs** to track state | **Stateful by design** |
+| **How it works** | Lots of manual work to keep track of progress | When creating the graph, you define a state object. Every node receives the state, processes it, and returns the updated state |
+
+### Challenge 3: Event-Driven Execution
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Execution model** | **Sequential** — steps run one after another in a fixed order | **Event-driven** — nodes run when their conditions are met |
+
+### Challenge 4: Fault Tolerance
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Problem** | If a long-running workflow breaks, it **starts from the beginning** | Uses a **checkpointer** to save progress. If a fault happens, it **resumes from where it failed** |
+| **Recovery** | Not possible | Easy — just resume from the saved state |
+
+### Challenge 5: Human in the Loop
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Problem** | You need to **split into two chains** — one before human approval and one after | Progress is **saved in state**. After human approval, it **continues from the same point** |
+| **Flow** | Chain 1 → break → human approves → Chain 2 | Node runs → waits for human → continues from saved state |
+
+### Challenge 6: Nested Workflows (Sub-graphs)
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Concept** | Hard to compose workflows inside workflows | A node in a graph can be **another graph** (sub-graph) |
+| **Use case** | Difficult to build multi-agent systems | Great for **multi-agent systems**. Makes graphs **reusable** |
+
+### Challenge 7: Observability
+
+| | LangChain | LangGraph |
+|---|-----------|-----------|
+| **Tool** | Both use **LangSmith** | Both use **LangSmith** |
+| **Problem** | LangSmith cannot understand glue code, so debugging is hard | No glue code → LangSmith understands everything. It gives a **complete timeline** of the workflow |
+| **Debugging** | Difficult | Easy |
+
+---
+
+## Quick Comparison Table
+
+| Feature | LangChain | LangGraph |
+|---------|-----------|-----------|
+| Control flow | Needs glue code | Graph-based (nodes + edges) |
+| State management | Manual | Built-in (stateful) |
+| Execution | Sequential | Event-driven |
+| Fault tolerance | Restarts from beginning | Resumes from checkpoint |
+| Human in the loop | Split into multiple chains | Pause and resume from same point |
+| Nested workflows | Hard to compose | Sub-graphs supported |
+| Observability | Hard to debug (glue code) | Easy (no glue code) |
+| Best for | Simple linear workflows | Complex, branching, long-running workflows |
+
+---
+
+## Interview Tips (LangChain vs LangGraph)
+
+- **The key difference** — LangChain is **chain-based** (linear steps). LangGraph is **graph-based** (nodes + edges, supports loops and branches).
+- **When to use what** — Use LangChain for simple Q&A or basic RAG. Use LangGraph for complex multi-step workflows, multi-agent systems, and long-running processes with human approval.
+- **State is the game changer** — In interviews, highlight that LangGraph's built-in state + checkpointing is what makes fault tolerance and HITL possible.
+- **Sub-graphs** — Mention that sub-graphs make LangGraph great for building **reusable, modular** AI systems.
