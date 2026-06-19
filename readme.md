@@ -262,3 +262,134 @@ If we build this workflow with **LangChain**, we face several problems. Here is 
 - **When to use what** — Use LangChain for simple Q&A or basic RAG. Use LangGraph for complex multi-step workflows, multi-agent systems, and long-running processes with human approval.
 - **State is the game changer** — In interviews, highlight that LangGraph's built-in state + checkpointing is what makes fault tolerance and HITL possible.
 - **Sub-graphs** — Mention that sub-graphs make LangGraph great for building **reusable, modular** AI systems.
+
+
+---
+
+# LangGraph Core Concepts
+
+LangGraph is an **orchestration framework** for building intelligent, stateful, multi-step LLM workflows. It provides advanced features like parallelism, loops, branching, memory, and resumability.
+
+---
+
+## LLM Workflows
+
+A workflow is a **series of tasks** designed to achieve a goal or build a complex application. Each task can be — prompting, reasoning, tool calling, memory access, or decision making.
+
+Workflows can be **linear**, **parallel**, or **looped**.
+
+### Common Types of Workflows
+
+#### 1. Prompt Chaining
+
+Call the LLM **multiple times in a sequence**, where the output of one prompt becomes the input of the next.
+
+#### 2. Routing
+
+Call an LLM **router** to decide which specialist agent or tool can best handle a given task.
+
+```
+Input → Router LLM → Checks which agent is capable → Routes to that agent
+```
+
+#### 3. Parallelization
+
+Break a task into **multiple sub-tasks**, run them all at the same time, then combine the results with an **aggregator**.
+
+**Example:** Content moderation — multiple models check different things (text, image, video) → aggregator makes the final decision
+
+#### 4. Orchestrator Workers
+
+Similar to parallelization, but the sub-tasks are **not pre-defined**. The orchestrator decides which worker to assign based on the input.
+
+```
+Input → Orchestrator → Decides which workers to use → Workers execute → Aggregate results → Output
+```
+
+#### 5. Evaluator-Optimizer
+
+A loop where the LLM generates a solution, then another LLM (or the same one) evaluates it.
+
+```
+Generate → Evaluate → If rejected → Generate again (loop) → If accepted → Output
+```
+
+---
+
+## Graph, Nodes, and Edges
+
+The core idea of LangGraph is to **convert an LLM workflow into a graph**.
+
+| Term | Meaning |
+|------|---------|
+| **Graph** | The entire workflow |
+| **Node** | A single step or task in the workflow (e.g., call LLM, call a tool, make a decision) |
+| **Edge** | The connection between nodes — defines the flow (which node runs next) |
+
+---
+
+## State
+
+**State** is the **shared memory** that flows through your entire workflow.
+
+- State is **shared** between all nodes
+- State is **mutable** (can be changed)
+- State is a special type of dictionary called **TypedDict** (you define the structure)
+
+Every node receives the current state, does its work, and returns an **updated state**.
+
+---
+
+## Reducers
+
+A **reducer** tells the system **how to update the state** when a node returns new data.
+
+- Each key in the state can have its **own reducer**
+- Reducers define the update logic (e.g., add to a list, overwrite a value, merge dictionaries)
+
+**Simple example:**
+```
+State = {"messages": []}
+Reducer for "messages" = add new message to the list (append)
+Every time a node runs, it adds its message → state keeps growing
+```
+
+---
+
+## LangGraph Execution Model
+
+LangGraph runs a workflow in **6 steps**:
+
+```
+1. Graph Definition
+   ↓
+2. Compilation
+   ↓
+3. Invocation
+   ↓
+4. Super Step Begins
+   ↓
+5. Message Passing & Node Activation
+   ↓
+6. Halting Condition
+```
+
+| Step | What happens |
+|------|-------------|
+| **1. Graph Definition** | Define the state, nodes, and edges |
+| **2. Compilation** | Call the `compile()` function to prepare the graph |
+| **3. Invocation** | Pass the initial state to start execution |
+| **4. Super Step Begins** | Run multiple nodes in parallel where possible |
+| **5. Message Passing** | Nodes send messages and activate the next nodes |
+| **6. Halting Condition** | Stop when the goal is reached or a stop condition is met |
+
+These 6 steps happen **automatically** — you just define the graph and LangGraph handles the execution.
+
+---
+
+## Interview Tips (LangGraph Core Concepts)
+
+- **State is the heart of LangGraph** — Everything revolves around state. Nodes read state, modify it, and pass it forward.
+- **Reducers = how state changes** — Be ready to explain that reducers control how each key in state gets updated (append, overwrite, etc.).
+- **Graph vs Chain** — LangGraph = graph (nodes + edges, flexible). LangChain = chain (linear, rigid). This is the most common interview question.
+- **Super step** — LangGraph is not purely sequential. It can run multiple nodes in parallel in a single super step.
