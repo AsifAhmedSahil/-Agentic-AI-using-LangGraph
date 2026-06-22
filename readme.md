@@ -679,6 +679,124 @@ def final_evaluation(state: EssayState):
 
 ---
 
+## 6️⃣ Conditional Workflow — Quadratic Solver (`6_conditional_workflow.ipynb`)
+
+**Goal:** Solve a quadratic equation by computing the discriminant and routing to the correct result node based on its value.
+
+### Code Pattern
+
+```python
+class QuadState(TypedDict):
+    a: int; b: int; c: int
+    equation: str; discriminant: str; result: str
+
+def show_equation(state: QuadState):
+    equation = f"{state['a']}x^2 + {state['b']}x + {state['c']}"
+    return {'equation': equation}
+
+def calculate_discriminant(state: QuadState):
+    discriminant = state['b']**2 - (4*state['a']*state['c'])
+    return {'discriminant': discriminant}
+
+def check_condition(state: QuadState) -> Literal["real_roots","repeated_roots","no_real_roots"]:
+    if state['discriminant'] > 0:      return "real_roots"
+    elif state["discriminant"] == 0:   return "repeated_roots"
+    else:                              return "no_real_roots"
+
+# Graph: START → show_equation → calculate_discriminant
+#         → (conditional) → real_roots / repeated_roots / no_real_roots → END
+
+graph.add_conditional_edges('calculate_discriminant', check_condition)
+```
+
+### Workflow Diagram
+
+```mermaid
+flowchart LR
+    START([START]) --> show_equation[show_equation]
+    show_equation --> calculate_discriminant[calculate_discriminant]
+    calculate_discriminant --> check_condition{check_condition}
+    check_condition -- "D > 0" --> real_roots[real_roots]
+    check_condition -- "D == 0" --> repeated_roots[repeated_roots]
+    check_condition -- "D < 0" --> no_real_roots[no_real_roots]
+    real_roots --> END([END])
+    repeated_roots --> END
+    no_real_roots --> END
+```
+
+### Key Takeaways
+
+| Concept | What it teaches |
+|---------|----------------|
+| **Conditional edges** | `add_conditional_edges(node, router_fn)` — the router function returns the **name of the next node** |
+| **Router return type** | Router must return a `Literal["node1", "node2", ...]` — this tells LangGraph which edge to follow |
+| **Branching logic** | A single node can fan out to multiple destination nodes based on data |
+| **No edge to END** | The conditional edges replace `add_edge` — each route goes directly to its own node |
+
+**⚠️ Common Bug:** The router function returns a **string** (node name), not a boolean or state update. Mistyped node names cause `ValueError`.
+
+---
+
+## 7️⃣ Review Reply Workflow (`7_review_reply_workflow.ipynb`)
+
+**Goal:** Classify a product review's sentiment (positive/negative), then either send a thank-you note or diagnose the issue and craft a resolution message.
+
+### Code Pattern
+
+```python
+class SentimentSchema(BaseModel):
+    sentiment: Literal["positive", "negative"] = Field(description="Sentiment of the review")
+
+class DiagnosisSchema(BaseModel):
+    issue_type: Literal["UX","Performance","Bug","Support","Other"]
+    tone: Literal["angry","frustrated","disappointed","calm"]
+    urgency: Literal["low","medium","high"]
+
+structure_model = model.with_structured_output(SentimentSchema)
+structure_model2 = model.with_structured_output(DiagnosisSchema)
+
+def find_sentiment(state: ReviewState):
+    prompt = f"For the following review find out the sentiment \n {state['review']}"
+    sentiment = structure_model.invoke(prompt).sentiment
+    return {"sentiment": sentiment}
+
+def check_sentiment(state: ReviewState) -> Literal["positive_response", "run_diagnosis"]:
+    if state['sentiment'] == "positive": return "positive_response"
+    else:                                return "run_diagnosis"
+
+# Positive path: find_sentiment → positive_response → END
+# Negative path: find_sentiment → run_diagnosis → negative_response → END
+
+graph.add_conditional_edges("find_sentiment", check_sentiment)
+```
+
+### Workflow Diagram
+
+```mermaid
+flowchart LR
+    START([START]) --> find_sentiment[find_sentiment]
+    find_sentiment --> check_sentiment{check_sentiment}
+    check_sentiment -- "positive" --> positive_response[positive_response]
+    check_sentiment -- "negative" --> run_diagnosis[run_diagnosis]
+    positive_response --> END([END])
+    run_diagnosis --> negative_response[negative_response]
+    negative_response --> END
+```
+
+### Key Takeaways
+
+| Concept | What it teaches |
+|---------|----------------|
+| **Sentiment routing** | Use an LLM + structured output to classify input, then route with conditional edges |
+| **Two schema pattern** | One schema for classification (`SentimentSchema`), another for deeper analysis (`DiagnosisSchema`) |
+| **Chained analysis** | Negative reviews go through diagnosis → response generation (2-step chain) |
+| **Struct → dict** | `response.model_dump()` converts Pydantic output to a dict for state storage |
+| **Multi-path graph** | A single conditional edge sends positive and negative reviews down completely different paths |
+
+**Interview Tip:** This is a classic **real-world customer support workflow** — classify → route → specialized handler. It combines conditional edges, structured output, and prompt chaining in one graph.
+
+---
+
 ## 📊 Workflow Comparison Table
 
 | Feature | BMI Workflow | LLM Q&A | Blog Generator |
