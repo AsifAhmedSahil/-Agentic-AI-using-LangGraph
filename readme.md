@@ -797,6 +797,90 @@ flowchart LR
 
 ---
 
+## 8️⃣ Post Generator — Evaluator-Optimizer (`8_post_generator.ipynb`)
+
+**Goal:** Generate a LinkedIn post on a topic, evaluate it with strict criteria, and iteratively improve it until approved or max iterations reached.
+
+### Code Pattern
+
+```python
+class PostEvaluation(BaseModel):
+    evaluation: Literal['approved', 'needs_improvement']
+    feedback: str
+
+structured_evaluator_llm = evaluator_llm.with_structured_output(PostEvaluation)
+
+class PostState(TypedDict):
+    topic: str
+    tweet: str
+    evaluation: Literal["approved", "needs_improvement"]
+    feedback: str
+    iteration: int
+    max_iteration: int
+
+def generate_Linkedin_Post(state: PostState):
+    messages = [SystemMessage(content="..."), HumanMessage(content=f"...{state['topic']}...")]
+    response = generator_llm.invoke(messages).content
+    return {"tweet": response}
+
+def evaluate_post(state: PostState):
+    response = structured_evaluator_llm.invoke(messages)
+    return {'evaluation': response.evaluation, "feedback": response.feedback}
+
+def optimised_post(state: PostState):
+    response = optimizer_llm.invoke(messages).content
+    return {"tweet": response, "iteration": state['iteration'] + 1}
+
+def route_evaluation(state: PostState) -> Literal["approved", "needs_improvement"]:
+    if state['evaluation'] == "approved" or state['iteration'] >= state['max_iteration']:
+        return "approved"
+    return "needs_improvement"
+
+# Graph: START → generate → evaluate
+#         → (conditional) → END (if approved) / optimize → evaluate (loop)
+graph = StateGraph(PostState)
+graph.add_node("generate", generate_Linkedin_Post)
+graph.add_node("evaluate", evaluate_post)
+graph.add_node("optimize", optimised_post)
+graph.add_edge(START, "generate")
+graph.add_edge("generate", "evaluate")
+graph.add_conditional_edges("evaluate", route_evaluation, {
+    'approved': END, 'needs_improvement': "optimize"
+})
+graph.add_edge("optimize", "evaluate")
+workflow = graph.compile()
+```
+
+### Workflow Diagram
+
+```mermaid
+flowchart LR
+    START([START]) --> generate[generate]
+    generate --> evaluate[evaluate]
+    evaluate --> route{route_evaluation}
+    route -- "approved" --> END([END])
+    route -- "needs_improvement" --> optimize[optimize]
+    optimize --> evaluate
+```
+
+### Key Takeaways
+
+| Concept | What it teaches |
+|---------|----------------|
+| **Evaluator-Optimizer** | Classic loop pattern: Generate → Evaluate → Improve → Re-evaluate |
+| **Loop with guard** | `optimize → evaluate` is a cycle; the router breaks it on approval or max iteration |
+| **Three LLMs** | Generator, evaluator, and optimizer can be separate models or the same |
+| **Structured evaluation** | `with_structured_output(PostEvaluation)` gives typed {evaluation, feedback} |
+| **Iteration counter** | `iteration` tracks attempts; `max_iteration` prevents infinite loops |
+| **Router as guard** | The router checks both quality (`approved`) and budget (`iteration >= max_iteration`) |
+| **Loop-back edge** | `add_edge("optimize", "evaluate")` creates a feedback loop in the graph |
+
+**⚠️ Common Bug:** The `route_evaluation` guard must check `>= max_iteration` (not `==`) to handle edge cases where iteration gets incremented past the limit.
+
+**Interview Tip:** This is the **Evaluator-Optimizer** workflow pattern from the [workflow types](#common-types-of-workflows) section — implemented as a graph with a loop-back edge. It's the most practical pattern for production AI systems where quality control via iterative refinement is needed.
+
+---
+
 ## 📊 Workflow Comparison Table
 
 | Feature | BMI Workflow | LLM Q&A | Blog Generator |
