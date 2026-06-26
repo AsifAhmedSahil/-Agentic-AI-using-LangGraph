@@ -914,3 +914,105 @@ flowchart LR
 - **Prompt chaining =** LLM output feeds into next LLM's prompt via state
 - **LLM in LangGraph =** Just call `model.invoke()` inside a node — nothing special needed
 - **Why LangGraph over LangChain for these?** Even simple workflows benefit from built-in state management vs manual variable passing
+
+---
+
+## 9️⃣ Chatbot Workflow (`9_chatbot.ipynb`)
+
+**Goal:** Build a conversational chatbot that maintains message history across turns using LangGraph state.
+
+### Code Pattern
+
+```python
+from langgraph.graph.message import add_messages
+from langgraph.checkpoint.memory import MemorySaver
+
+class ChatState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+
+llm = ChatOpenAI()
+
+def chat_node(state: ChatState):
+    messages = state['messages']
+    response = llm.invoke(messages)
+    return {'messages': [response]}
+
+checkpointer = MemorySaver()
+graph = StateGraph(ChatState)
+graph.add_node('chat_node', chat_node)
+graph.add_edge(START, "chat_node")
+graph.add_edge("chat_node", END)
+
+chatbot = graph.compile(checkpointer=checkpointer)
+
+# Invoke with thread_id for conversation tracking
+config = {"configurable": {"thread_id": "1"}}
+chatbot.invoke({"messages": [HumanMessage(content="hi")]}, config=config)
+```
+
+### Key Takeaways
+
+| Concept | What it teaches |
+|---------|----------------|
+| **add_messages reducer** | `Annotated[list[BaseMessage], add_messages]` — this reducer appends new messages to the existing list automatically |
+| **MemorySaver** | In-memory checkpointer that saves state at every super step — keeps conversation history alive within a thread |
+| **Thread ID** | `configurable: {"thread_id": "1"}` — each conversation gets a unique thread ID so the checkpointer knows which history to load |
+| **LLM with history** | Pass the full `messages` list to `llm.invoke()` — the LLM sees the entire conversation context |
+| **Conversation loop** | `while True` loop with `input()` — on each turn, invoke with the same thread_id so the checkpointer appends new messages to existing history |
+
+### How State Grows
+
+```
+Turn 1: [HumanMessage("hi")]
+         ↓
+         LLM responds → state['messages'] = [Human("hi"), AIMessage("Hello!")]
+         ↓
+Turn 2: [HumanMessage("what is langchain?")]
+         ↓
+         checkpointer loads history → invokes LLM with [Human("hi"), AI("Hello!"), Human("what is langchain?")]
+         ↓
+         state['messages'] = [Human("hi"), AI("Hello!"), Human("what is langchain?"), AIMessage("...")]
+```
+
+**⚠️ Common Bug:** Forgetting to pass `config` with `thread_id` — without it, every invoke starts a fresh conversation with no history.
+
+**Interview Tip:** This is the foundation of **stateful chatbots**. The `add_messages` reducer is what makes conversation history automatic. Without it, each turn would overwrite the previous messages. The `MemorySaver` + `thread_id` combo is what enables multi-turn conversations — the checkpointer persists state between invocations.
+
+---
+
+## 10️⃣ Persistence (`10_persistence.ipynb`)
+
+**Goal:** Understand LangGraph's persistence layer — how checkpoints and threads enable fault tolerance, conversation history, human-in-the-loop, and time travel.
+
+### Core Concepts
+
+| Concept | What it does |
+|---------|-------------|
+| **Checkpointer** | Saves the entire state at every **super step** to a database. If the workflow crashes, it resumes from the last saved checkpoint — not from the beginning |
+| **Thread ID** | A unique identifier assigned to a workflow run. All checkpoint data is stored under this ID. When resuming, you supply the same thread_id to load the correct state |
+| **Super Step** | LangGraph's execution unit (one or more nodes running in parallel). After each super step, the checkpointer persists the current state |
+
+### Benefits of Persistence
+
+| Benefit | What it enables |
+|---------|----------------|
+| **Short-term memory** | Messages from previous turns are saved and reloaded — the chatbot remembers the conversation (shown in `9_chatbot.ipynb` with `MemorySaver`) |
+| **Fault tolerance** | If the workflow crashes mid-execution, next run with the same thread_id resumes from the last checkpoint — no data loss and no restart |
+| **Human in the Loop** | The workflow pauses and waits for human approval; the state is saved at that point. After approval, execution continues from the same saved state |
+| **Time travel** | You can re-run the workflow from any past checkpoint using the thread_id and checkpoint ID — useful for debugging and replay |
+
+### Checkpointer Flow
+
+```
+Super Step 1 → Checkpointer saves state → Super Step 2 → Checkpointer saves state
+                                                              ↓
+                                                    (crash happens here)
+                                                              ↓
+                                                    Resume with same thread_id
+                                                              ↓
+                                                    Checkpointer loads last saved state
+                                                              ↓
+                                                    Continues from Super Step 2 onward
+```
+
+**Interview Tip:** Persistence is what makes LangGraph production-ready. Four things it enables — short-term memory (conversation history), fault tolerance (crash recovery), human-in-the-loop (pause/resume), and time travel (replay from any point). The checkpointer + thread_id pattern is the backbone of all four.
