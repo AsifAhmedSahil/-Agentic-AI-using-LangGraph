@@ -1016,3 +1016,99 @@ Super Step 1 → Checkpointer saves state → Super Step 2 → Checkpointer save
 ```
 
 **Interview Tip:** Persistence is what makes LangGraph production-ready. Four things it enables — short-term memory (conversation history), fault tolerance (crash recovery), human-in-the-loop (pause/resume), and time travel (replay from any point). The checkpointer + thread_id pattern is the backbone of all four.
+
+---
+
+## 11️⃣ Streamlit Chatbot — Streaming vs Invoke (`chatbot_frontend_streaming.py`)
+
+**Goal:** Build a Streamlit UI for the LangGraph chatbot that streams LLM responses token-by-token in real-time, comparing `stream()` vs `invoke()`.
+
+### Architecture
+
+```
+chatbot_backend.py         → LangGraph graph with InMemorySaver + add_messages
+chatbot_frontend.py        → Streamlit UI using chatbot.invoke() — waits for full response
+chatbot_frontend_streaming.py → Streamlit UI using chatbot.stream() — shows tokens in real-time
+```
+
+### Code Pattern — Streaming Version
+
+```python
+import streamlit as st
+from chatbot_backend import chatbot
+from langchain_core.messages import HumanMessage
+
+CONFIG = {"configurable": {"thread_id": "thread-1"}}
+
+# Session state keeps UI history between reruns
+if "message_history" not in st.session_state:
+    st.session_state["message_history"] = []
+
+# Load and display existing conversation
+for message in st.session_state["message_history"]:
+    with st.chat_message(message["role"]):
+        st.text(message["content"])
+
+user_input = st.chat_input("Type Here...")
+
+if user_input:
+    # Display user message immediately
+    st.session_state["message_history"].append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.text(user_input)
+
+    # Stream response token-by-token
+    with st.chat_message("assistant"):
+        ai_messages = st.write_stream(
+            message_chunk.content for message_chunk, metadata in chatbot.stream(
+                {"messages": [HumanMessage(content=user_input)]},
+                config={"configurable": {"thread_id": "thread-1"}},
+                stream_mode="messages"
+            )
+        )
+
+    st.session_state["message_history"].append({"role": "assistant", "content": ai_messages})
+```
+
+### Streaming vs Invoke Comparison
+
+| Aspect | `chatbot.invoke()` (non-streaming) | `chatbot.stream(stream_mode="messages")` |
+|--------|-----------------------------------|------------------------------------------|
+| **UX** | User waits, then sees full response at once | Tokens appear in real-time as the LLM generates |
+| **Blocking** | Blocks the UI until complete | Non-blocking — `st.write_stream()` updates progressively |
+| **Output** | Returns the final `AIMessage` object | Yields `(message_chunk, metadata)` tuples — each chunk is a partial message |
+| **Display** | `st.text(ai_messages)` | `st.write_stream(generator)` |
+| **Code** | One-liner: `response = chatbot.invoke(...)` | Generator expression with `chatbot.stream(...)` |
+| **When to use** | Short responses, simple Q&A | Long responses, chat, any case where UX matters |
+
+### How Streaming Works Internally
+
+```
+chatbot.stream(config={"configurable": {"thread_id": ".."}}, stream_mode="messages")
+         ↓
+Yields (AIMessageChunk(content="The"), Metadata)
+Yields (AIMessageChunk(content=" capital"), Metadata)
+Yields (AIMessageChunk(content=" of"), Metadata)
+Yields (AIMessageChunk(content=" France"), Metadata)
+Yields (AIMessageChunk(content=" is"), Metadata)
+Yields (AIMessageChunk(content=" Paris"), Metadata)
+         ↓
+st.write_stream() receives each chunk → UI updates in real-time
+         ↓
+Final accumulated content: "The capital of France is Paris"
+```
+
+### Key Takeaways
+
+| Concept | What it teaches |
+|---------|----------------|
+| **`chatbot.stream()`** | LangGraph's streaming method — yields `(message_chunk, metadata)` tuples in real-time |
+| **`stream_mode="messages"`** | Tells LangGraph to yield message-level chunks instead of full state snapshots |
+| **`st.write_stream()`** | Streamlit's built-in streaming display — accepts a generator and updates the UI progressively |
+| **Generator expression** | `(chunk.content for chunk, meta in chatbot.stream(...))` — extracts just the text content from each chunk |
+| **Same persistence** | Streaming uses the same `checkpointer` + `thread_id` — conversation history works identically to `invoke()` |
+| **Session state** | `st.session_state["message_history"]` — persists chat history across Streamlit reruns |
+
+**⚠️ Common Bug:** The generator in `st.write_stream()` must yield **strings**, not message objects. Always extract `.content` from each `AIMessageChunk`.
+
+**Interview Tip:** Streaming is critical for production chatbots. LangGraph's `stream()` with `stream_mode="messages"` gives you token-level control. Streamlit's `st.write_stream()` consumes the generator natively. Together they create a smooth real-time chat experience. Compare with `invoke()` which is simpler but gives a worse UX for long responses.
